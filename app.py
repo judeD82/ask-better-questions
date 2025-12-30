@@ -1,8 +1,7 @@
 import streamlit as st
-import random
 import numpy as np
 
-from sentence_transformers import SentenceTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 
 # --------------------------------------------------
@@ -51,15 +50,6 @@ if not check_password():
     st.stop()
 
 # --------------------------------------------------
-# Load ML model (cached)
-# --------------------------------------------------
-@st.cache_resource
-def load_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
-
-model = load_model()
-
-# --------------------------------------------------
 # App UI
 # --------------------------------------------------
 st.title("Ask Better Questions")
@@ -79,21 +69,18 @@ tone = st.selectbox(
 # Question bank
 # --------------------------------------------------
 QUESTIONS = [
-    # Gentle
     {"text": "What do I actually want here?", "tone": "Gentle"},
     {"text": "What would make this feel 10% lighter?", "tone": "Gentle"},
     {"text": "What am I assuming without checking?", "tone": "Gentle"},
     {"text": "What’s the smallest honest step?", "tone": "Gentle"},
     {"text": "What feels unclear, specifically?", "tone": "Gentle"},
 
-    # Direct
     {"text": "What decision am I avoiding?", "tone": "Direct"},
     {"text": "What’s the real constraint?", "tone": "Direct"},
     {"text": "What would action look like if I stopped overthinking?", "tone": "Direct"},
     {"text": "What happens if I do nothing for another month?", "tone": "Direct"},
     {"text": "What outcome am I secretly hoping for?", "tone": "Direct"},
 
-    # Uncomfortable
     {"text": "What am I protecting myself from seeing?", "tone": "Uncomfortable"},
     {"text": "What do I gain by staying stuck?", "tone": "Uncomfortable"},
     {"text": "What truth would disrupt my current story?", "tone": "Uncomfortable"},
@@ -102,24 +89,28 @@ QUESTIONS = [
 ]
 
 # --------------------------------------------------
-# Generate questions (semantic matching)
+# Semantic matching (TF-IDF)
 # --------------------------------------------------
+@st.cache_resource
+def build_vectorizer(texts):
+    vectorizer = TfidfVectorizer(
+        stop_words="english",
+        ngram_range=(1, 2)
+    )
+    vectors = vectorizer.fit_transform(texts)
+    return vectorizer, vectors
+
 if st.button("Generate questions"):
     if not issue.strip():
         st.warning("Write a sentence or two first.")
     else:
-        # Filter questions by tone
         filtered = [q for q in QUESTIONS if q["tone"] == tone]
         texts = [q["text"] for q in filtered]
 
-        # Encode text
-        question_embeddings = model.encode(texts)
-        input_embedding = model.encode([issue])
+        vectorizer, question_vectors = build_vectorizer(texts)
+        input_vector = vectorizer.transform([issue])
 
-        # Compute similarity
-        similarities = cosine_similarity(input_embedding, question_embeddings)[0]
-
-        # Select top 3 most relevant questions
+        similarities = cosine_similarity(input_vector, question_vectors)[0]
         top_indices = np.argsort(similarities)[-3:][::-1]
 
         st.subheader("Your questions")
