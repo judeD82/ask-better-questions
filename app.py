@@ -1,5 +1,9 @@
 import streamlit as st
 import random
+import numpy as np
+
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # --------------------------------------------------
 # Page config
@@ -14,11 +18,6 @@ st.set_page_config(
 # Password gate
 # --------------------------------------------------
 def check_password():
-    """
-    Simple password gate using Streamlit secrets.
-    The app will not run unless the correct password is entered.
-    """
-
     def password_entered():
         if st.session_state["password"] == st.secrets["app_password"]:
             st.session_state["authenticated"] = True
@@ -52,6 +51,15 @@ if not check_password():
     st.stop()
 
 # --------------------------------------------------
+# Load ML model (cached)
+# --------------------------------------------------
+@st.cache_resource
+def load_model():
+    return SentenceTransformer("all-MiniLM-L6-v2")
+
+model = load_model()
+
+# --------------------------------------------------
 # App UI
 # --------------------------------------------------
 st.title("Ask Better Questions")
@@ -70,40 +78,53 @@ tone = st.selectbox(
 # --------------------------------------------------
 # Question bank
 # --------------------------------------------------
-QUESTIONS = {
-    "Gentle": [
-        "What do I actually want here?",
-        "What would make this feel 10% lighter?",
-        "What am I assuming without checking?",
-        "What’s the smallest honest step?",
-        "What feels unclear, specifically?"
-    ],
-    "Direct": [
-        "What decision am I avoiding?",
-        "What’s the real constraint?",
-        "What would action look like if I stopped overthinking?",
-        "What happens if I do nothing for another month?",
-        "What outcome am I secretly hoping for?"
-    ],
-    "Uncomfortable": [
-        "What am I protecting myself from seeing?",
-        "What do I gain by staying stuck?",
-        "What truth would disrupt my current story?",
-        "If I respected myself, what would I do next?",
-        "What responsibility am I quietly refusing to take?"
-    ]
-}
+QUESTIONS = [
+    # Gentle
+    {"text": "What do I actually want here?", "tone": "Gentle"},
+    {"text": "What would make this feel 10% lighter?", "tone": "Gentle"},
+    {"text": "What am I assuming without checking?", "tone": "Gentle"},
+    {"text": "What’s the smallest honest step?", "tone": "Gentle"},
+    {"text": "What feels unclear, specifically?", "tone": "Gentle"},
+
+    # Direct
+    {"text": "What decision am I avoiding?", "tone": "Direct"},
+    {"text": "What’s the real constraint?", "tone": "Direct"},
+    {"text": "What would action look like if I stopped overthinking?", "tone": "Direct"},
+    {"text": "What happens if I do nothing for another month?", "tone": "Direct"},
+    {"text": "What outcome am I secretly hoping for?", "tone": "Direct"},
+
+    # Uncomfortable
+    {"text": "What am I protecting myself from seeing?", "tone": "Uncomfortable"},
+    {"text": "What do I gain by staying stuck?", "tone": "Uncomfortable"},
+    {"text": "What truth would disrupt my current story?", "tone": "Uncomfortable"},
+    {"text": "If I respected myself, what would I do next?", "tone": "Uncomfortable"},
+    {"text": "What responsibility am I quietly refusing to take?", "tone": "Uncomfortable"},
+]
 
 # --------------------------------------------------
-# Generate questions
+# Generate questions (semantic matching)
 # --------------------------------------------------
 if st.button("Generate questions"):
     if not issue.strip():
         st.warning("Write a sentence or two first.")
     else:
+        # Filter questions by tone
+        filtered = [q for q in QUESTIONS if q["tone"] == tone]
+        texts = [q["text"] for q in filtered]
+
+        # Encode text
+        question_embeddings = model.encode(texts)
+        input_embedding = model.encode([issue])
+
+        # Compute similarity
+        similarities = cosine_similarity(input_embedding, question_embeddings)[0]
+
+        # Select top 3 most relevant questions
+        top_indices = np.argsort(similarities)[-3:][::-1]
+
         st.subheader("Your questions")
-        for q in random.sample(QUESTIONS[tone], k=3):
-            st.write("•", q)
+        for idx in top_indices:
+            st.write("•", texts[idx])
 
         st.divider()
         st.caption(
